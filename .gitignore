@@ -1,0 +1,27 @@
+# 构建输出
+**/build
+**/build/*
+!**/build/profile/
+
+# 依赖
+/node_modules
+/oh_modules
+**/oh_modules
+
+# hvigor 构建缓存
+/.hvigor
+
+# IDE 配置
+/.idea
+/.appanalyzer
+/debug
+
+# 本机配置
+/local.properties
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+
+# 其他
+.DS_Store

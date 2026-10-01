@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "简单镜子应用主模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "手机、平板通用的鸿蒙镜子应用"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "简单镜子"
+    },
+    {
+      "name": "camera_reason",
+      "value": "用于显示前置摄像头画面，实现镜子功能"
+    }
+  ]
+}

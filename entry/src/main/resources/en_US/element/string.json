@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Main module of the Simple Mirror app"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "A mirror app for HarmonyOS, works on phones and tablets"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Simple Mirror"
+    },
+    {
+      "name": "camera_reason",
+      "value": "Used to show the front-camera preview as a mirror"
+    }
+  ]
+}
