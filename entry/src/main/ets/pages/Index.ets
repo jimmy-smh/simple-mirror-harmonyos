@@ -24,6 +24,8 @@ struct Index {
   @State zoomScale: number = 1;    // 图像数字变倍（1~5，双指捏合）
   @State panX: number = 0;         // 放大后查看位置（vp，屏幕坐标系）
   @State panY: number = 0;
+  @State profileW: number = 0;     // 预览流规格宽（px，传感器方向）
+  @State profileH: number = 0;     // 预览流规格高（px）
 
   // ---------- 相机对象（不驱动 UI，用普通私有变量）----------
   private context: common.UIAbilityContext | undefined = undefined;
@@ -61,8 +63,16 @@ struct Index {
       this.panY = 0;
       return;
     }
-    const maxX: number = this.winW * (this.zoomScale - 1) / 2;
-    const maxY: number = this.winH * (this.zoomScale - 1) / 2;
+    const f: number[] = this.coverFootprint();
+    let maxX: number;
+    let maxY: number;
+    if (f[0] > 0) {
+      maxX = (f[0] * this.zoomScale - this.winW) / 2;
+      maxY = (f[1] * this.zoomScale - this.winH) / 2;
+    } else {
+      maxX = this.winW * (this.zoomScale - 1) / 2;
+      maxY = this.winH * (this.zoomScale - 1) / 2;
+    }
     this.panX = Math.min(Math.max(this.panX, -maxX), maxX);
     this.panY = Math.min(Math.max(this.panY, -maxY), maxY);
   }
@@ -93,24 +103,45 @@ struct Index {
     }
   }
 
-  // 预览镜像：该机前置预览流本身已是镜像画面，开关开启时直接显示，
-  // 关闭时在屏幕坐标系横向翻转成"他人视角"
-  private previewScreenScale(): ScaleOptions {
-    return { x: this.isMirrored ? 1 : -1, y: 1 };
+  // 屏幕坐标系统一横向翻转：预览流出厂自带镜像、拍照流不带，两者极性相反
+  private screenFlip(): ScaleOptions {
+    const flip: boolean = this.frozen ? !this.isMirrored : this.isMirrored;
+    return { x: flip ? 1 : -1, y: 1 };
   }
 
-  // 拍照流未经预镜像：极性与预览相反，保证定格画面与预览的镜像状态一致
-  private photoScale(): ScaleOptions {
-    return { x: this.isMirrored ? -1 : 1, y: 1 };
+  // ==================== 画面比例 ====================
+
+  // 该机相机流按竖屏方向各向异性拉伸填满 surface（实测），因此 surface 宽高比
+  // 必须等于相机流比例，画面才不变形；再按 Cover 语义铺满屏幕：等比放大、窗口裁掉溢出。
+  // 返回 [宽, 高]：内容铺满屏幕后的覆盖尺寸（vp，屏幕方向）
+  private coverFootprint(): number[] {
+    if (this.winW <= 0 || this.winH <= 0 || this.profileW <= 0 || this.profileH <= 0) {
+      return [0, 0];
+    }
+    const longSide: number = Math.max(this.profileW, this.profileH);
+    const shortSide: number = Math.min(this.profileW, this.profileH);
+    const aspect: number = this.isLandscape() ? longSide / shortSide : shortSide / longSide;
+    if (aspect > this.winW / this.winH) {
+      return [aspect * this.winH, this.winH];
+    }
+    return [this.winW, this.winW / aspect];
   }
 
-  // 横屏时预览面宽高对调，让画面比例与相机输出一致，等比铺满后溢出部分被裁掉
+  // surface 尺寸：竖屏取覆盖尺寸本身；横屏宽高对调（旋转 90° 后 footprint 恰好铺满）
   private previewWidth(): Length {
-    return this.isLandscape() && this.winH > 0 ? this.winH : '100%';
+    const f: number[] = this.coverFootprint();
+    if (f[0] <= 0) {
+      return '100%';
+    }
+    return this.isLandscape() ? f[1] : f[0];
   }
 
   private previewHeight(): Length {
-    return this.isLandscape() && this.winW > 0 ? this.winW : '100%';
+    const f: number[] = this.coverFootprint();
+    if (f[0] <= 0) {
+      return '100%';
+    }
+    return this.isLandscape() ? f[0] : f[1];
   }
 
   // ==================== 相机逻辑 ====================
@@ -151,9 +182,11 @@ struct Index {
       // 3. 获取输出能力，取第一个预览/拍照规格
       const capability: camera.CameraOutputCapability =
         this.cameraManager.getSupportedOutputCapability(front, camera.SceneMode.NORMAL_PHOTO);
+      const previewProfile: camera.Profile = capability.previewProfiles[0];
+      this.profileW = previewProfile.size.width;
+      this.profileH = previewProfile.size.height;
       // 4. 预览绑定到 XComponent 的 surface，另建一路拍照输出
-      this.previewOutput = this.cameraManager.createPreviewOutput(
-        capability.previewProfiles[0], this.surfaceId);
+      this.previewOutput = this.cameraManager.createPreviewOutput(previewProfile, this.surfaceId);
       this.photoOutput = this.cameraManager.createPhotoOutput(capability.photoProfiles[0]);
       // 5. 创建 photo 会话并启动
       this.photoSession = this.cameraManager.createSession<camera.PhotoSession>(camera.SceneMode.NORMAL_PHOTO);
@@ -279,26 +312,25 @@ struct Index {
                 .width(this.previewWidth())
                 .height(this.previewHeight())
 
-              // 定格画面（点击任意位置恢复取景）
-              if (this.frozen && this.frozenPixelMap) {
-                Image(this.frozenPixelMap)
-                  .width(this.previewWidth())
-                  .height(this.previewHeight())
-                  .objectFit(ImageFit.Cover)
-                  .scale(this.photoScale())  // 拍照流未经预镜像，极性与预览相反
-                  .onClick(() => {
-                    this.frozen = false;
-                  })
-              }
+            // 定格画面（点击任意位置恢复取景）
+            if (this.frozen && this.frozenPixelMap) {
+              Image(this.frozenPixelMap)
+                .width(this.previewWidth())
+                .height(this.previewHeight())
+                .objectFit(ImageFit.Cover)
+                .onClick(() => {
+                  this.frozen = false;
+                })
+            }
             }
             .width('100%')
             .height('100%')
             .rotate({ angle: this.compAngle() })
             .scale({ x: this.zoomScale, y: this.zoomScale })   // 图像数字变倍（等比，与旋转可交换）
           }
-          .width('100%')
-          .height('100%')
-          .scale(this.previewScreenScale())   // 预览镜像极性（屏幕坐标系）
+        .width('100%')
+        .height('100%')
+        .scale(this.screenFlip())   // 镜像翻转（屏幕坐标系；预览流与拍照流极性相反）
         }
         .width('100%')
         .height('100%')

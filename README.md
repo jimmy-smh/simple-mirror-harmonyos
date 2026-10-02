@@ -2,7 +2,7 @@
 
 ![Platform](https://img.shields.io/badge/Platform-HarmonyOS_26-blue) ![API](https://img.shields.io/badge/API-26-green) ![Language](https://img.shields.io/badge/Language-ArkTS-orange) ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
-简体中文 | [English](#english)
+简体中文 | [English](#english) | [更新记录](./CHANGELOG.md)
 
 ---
 
