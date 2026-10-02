@@ -1,5 +1,15 @@
 # 更新记录 | Changelog
 
+## v1.0.3（2026-10-02）
+
+### 改进 | Improvements
+
+- **全新应用图标**：深蓝→青色玻璃渐变背景，白色手持化妆镜搭配镜面斜向高光与星芒点缀，采用分层图标（前景/背景）规格，程序化矢量渲染、边缘抗锯齿。
+- **启动体验统一**：启动窗背景色与图标背景一致（#0B2140），启动过程不再闪白。
+
+- **Brand-new app icon**: a white hand mirror with diagonal glass glare and sparkles on a deep blue-to-teal glass gradient, built as a layered icon (foreground/background), rendered programmatically with anti-aliased vector shapes.
+- **Unified launch experience**: the start-window background now matches the icon background (#0B2140), removing the white flash on launch.
+
 ## v1.0.2（2026-10-02）
 
 ### 修复 | Fixes
