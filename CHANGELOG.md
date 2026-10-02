@@ -1,5 +1,19 @@
 # 更新记录 | Changelog
 
+## v1.0.4（2026-10-02）
+
+### 改进 | Improvements
+
+- **画面更清晰**：预览与拍照改为自动选择相机支持的分辨率最高规格（此前取列表首个，往往是低清规格）；拍照使用高质量档并把 JPEG 压缩质量设为 100，明显减少保存照片的压缩损失。
+- **自动对焦**：优先启用连续自动对焦，不支持时退回单次自动对焦（定焦前置摄像头自动忽略）。
+- **界面精简**：移除屏幕上的变焦滑条与快门按钮，取景画面更纯净；单击画面任意位置即可定格拍照，镜像开关单独保留在底部居中（横屏下更贴近底边）。
+- **变焦交互统一**：变焦统一由双指捏合手势完成（1x–5x 数字变倍），移除双击复位手势（捏回 1x 即复位）。
+
+- **Sharper picture**: preview and capture now pick the highest-resolution profile the camera offers (the first list entry was often a low-res one); photos are captured at the high-quality level with JPEG compression set to 100, greatly reducing compression loss on saved photos.
+- **Auto focus**: continuous auto focus is enabled when supported, falling back to single auto focus (silently skipped on fixed-focus front cameras).
+- **Cleaner UI**: the on-screen zoom slider and shutter button are gone for an unobstructed viewfinder; tap anywhere to freeze-frame, with the mirror switch alone at the bottom center (closer to the edge in landscape).
+- **Unified zoom**: zooming is now done purely with the pinch gesture (1x–5x digital); the double-tap reset is removed (pinch back to 1x to reset).
+
 ## v1.0.3（2026-10-02）
 
 ### 改进 | Improvements

@@ -27,9 +27,6 @@ struct Index {
   // ---------- 页面状态 ----------
   @State isPreviewing: boolean = false;                          // 预览是否已启动
   @State isMirrored: boolean = true;                             // 镜像显示（默认像照镜子）
-  @State zoomRatio: number = 1;                                  // 当前变焦倍数
-  @State zoomMin: number = 1;                                    // 支持的最小变焦
-  @State zoomMax: number = 6;                                    // 支持的最大变焦
   @State frozen: boolean = false;                                // 是否定格
   @State frozenPixelMap: image.PixelMap | undefined = undefined; // 定格画面
   @State permissionDenied: boolean = false;
@@ -131,12 +128,6 @@ struct Index {
     }
     this.panX = Math.min(Math.max(this.panX, -maxX), maxX);
     this.panY = Math.min(Math.max(this.panY, -maxY), maxY);
-  }
-
-  private resetZoom(): void {
-    this.zoomScale = 1;
-    this.panX = 0;
-    this.panY = 0;
   }
 
   // ==================== 横竖屏适配 ====================
@@ -258,15 +249,16 @@ struct Index {
       // 2. 创建输入并打开摄像头
       this.cameraInput = this.cameraManager.createCameraInput(front);
       await this.cameraInput.open();
-      // 3. 获取输出能力，取第一个预览/拍照规格
+      // 3. 获取输出能力，预览/拍照均选分辨率最高的规格（列表首个往往是低清规格）
       const capability: camera.CameraOutputCapability =
         this.cameraManager.getSupportedOutputCapability(front, camera.SceneMode.NORMAL_PHOTO);
-      const previewProfile: camera.Profile = capability.previewProfiles[0];
+      const previewProfile: camera.Profile = this.pickLargestProfile(capability.previewProfiles);
+      const photoProfile: camera.Profile = this.pickLargestProfile(capability.photoProfiles);
       this.profileW = previewProfile.size.width;
       this.profileH = previewProfile.size.height;
       // 4. 预览绑定到 XComponent 的 surface，另建一路拍照输出
       this.previewOutput = this.cameraManager.createPreviewOutput(previewProfile, sid);
-      this.photoOutput = this.cameraManager.createPhotoOutput(capability.photoProfiles[0]);
+      this.photoOutput = this.cameraManager.createPhotoOutput(photoProfile);
       // 5. 创建 photo 会话并启动
       this.photoSession = this.cameraManager.createSession<camera.PhotoSession>(camera.SceneMode.NORMAL_PHOTO);
       this.photoSession.beginConfig();
@@ -281,14 +273,17 @@ struct Index {
         await this.releaseCamera();
         return;
       }
-      // 6. 读取支持的变焦范围
-      const range: Array<number> = this.photoSession.getZoomRatioRange();
-      if (range && range.length >= 2) {
-        this.zoomMin = range[0];
-        this.zoomMax = range[1];
-        this.zoomRatio = range[0];
+      // 对焦：优先连续自动对焦，其次单次自动对焦（前置定焦设备不支持时忽略）
+      try {
+        if (this.photoSession.isFocusModeSupported(camera.FocusMode.FOCUS_MODE_CONTINUOUS_AUTO)) {
+          this.photoSession.setFocusMode(camera.FocusMode.FOCUS_MODE_CONTINUOUS_AUTO);
+        } else if (this.photoSession.isFocusModeSupported(camera.FocusMode.FOCUS_MODE_AUTO)) {
+          this.photoSession.setFocusMode(camera.FocusMode.FOCUS_MODE_AUTO);
+        }
+      } catch (err) {
+        // 定焦设备无对焦能力，忽略
       }
-      // 7. 监听拍照结果 → 生成定格画面
+      // 6. 监听拍照结果 → 生成定格画面
       this.photoOutput.on('photoAvailable', (err: BusinessError, photo: camera.Photo): void => {
         if (err || !photo) {
           return;
@@ -360,20 +355,27 @@ struct Index {
     }
   }
 
-  private setZoom(value: number): void {
-    const v = Math.min(Math.max(value, this.zoomMin), this.zoomMax);
-    try {
-      this.photoSession?.setZoomRatio(v);
-    } catch (err) {
-      // 超出设备支持范围时忽略
+  // 在规格列表中选分辨率最高的（面积最大），预览与拍照共用
+  private pickLargestProfile(profiles: Array<camera.Profile>): camera.Profile {
+    let best: camera.Profile = profiles[0];
+    for (const p of profiles) {
+      if (p.size.width * p.size.height > best.size.width * best.size.height) {
+        best = p;
+      }
     }
+    return best;
   }
 
+  // 拍照并定格（取景状态下点击画面触发）
   private takePhoto(): void {
     if (!this.photoOutput) {
       return;
     }
-    this.photoOutput.capture().catch(() => {
+    const setting: camera.PhotoCaptureSetting = {
+      quality: camera.QualityLevel.QUALITY_LEVEL_HIGH,
+      compressionQuality: 100  // JPEG 压缩质量拉满，减少保存照片的压缩损失
+    };
+    this.photoOutput.capture(setting).catch(() => {
       this.getUIContext().getPromptAction().showToast({ message: '拍照失败，请重试' });
     });
   }
@@ -473,8 +475,8 @@ struct Index {
       .width('100%')
       .height('100%')
 
-      // 底部控制区
-      Column({ space: 14 }) {
+      // 底部控制区（取景态仅保留镜像开关；变焦走捏合手势，定格走点击画面）
+      Column() {
         if (this.frozen && this.frozenPixelMap) {
           // —— 定格状态：重拍 / 保存 ——
           Row({ space: 24 }) {
@@ -498,7 +500,7 @@ struct Index {
               })
           }
         } else {
-          // —— 取景状态：镜像开关 / 变焦 / 定格 ——
+          // —— 取景状态：仅镜像开关 ——
           Row({ space: 10 }) {
             Text('镜像').fontColor(Color.White).fontSize(15)
             Toggle({ type: ToggleType.Switch, isOn: this.isMirrored })
@@ -510,31 +512,10 @@ struct Index {
           .backgroundColor('#33000000')
           .borderRadius(20)
           .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-
-          if (this.zoomMax > this.zoomMin) {
-            Slider({ value: this.zoomRatio, min: this.zoomMin, max: this.zoomMax, step: 0.1 })
-              .width('75%')
-              .blockColor(Color.White)
-              .selectedColor('#B3FFFFFF')
-              .trackColor('#33FFFFFF')
-              .onChange((value: number) => {
-                this.zoomRatio = value;
-                this.setZoom(value);
-              })
-          }
-
-          // 快门（定格按钮）
-          Circle({ width: 74, height: 74 })
-            .fill('#E6FFFFFF')
-            .stroke('#66000000')
-            .strokeWidth(4)
-            .onClick(() => {
-              this.takePhoto();
-            })
         }
       }
       .width('100%')
-      .padding({ left: 20, right: 20, bottom: 46 })
+      .padding({ left: 20, right: 20, bottom: this.isLandscape() ? 23 : 46 })   // 横屏贴底距离减半
     }
     .width('100%')
     .height('100%')
@@ -570,10 +551,12 @@ struct Index {
             this.panY = this.panBaseY + event.offsetY;
             this.clampPan();
           }),
-        // 双击复位
-        TapGesture({ count: 2 })
+        // 单击画面：定格拍照（定格态由画面自身点击返回取景，子组件点击优先，不会重复触发）
+        TapGesture({ count: 1 })
           .onAction(() => {
-            this.resetZoom();
+            if (!this.frozen) {
+              this.takePhoto();
+            }
           })
       )
     )
