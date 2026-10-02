@@ -6,6 +6,21 @@ import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.Ability
 import { display } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 
+// XComponent surface 生命周期监听：应用退后台时 surface 被系统销毁、回前台时重建，
+// 通过它驱动相机随之释放/重建，避免会话绑在已失效的 surface 上（表现为画面冻结不更新）
+class MirrorSurfaceController extends XComponentController {
+  surfaceCreated: (surfaceId: string) => void = (): void => {};
+  surfaceDestroyed: () => void = (): void => {};
+
+  onSurfaceCreated(surfaceId: string): void {
+    this.surfaceCreated(surfaceId);
+  }
+
+  onSurfaceDestroyed(surfaceId: string): void {
+    this.surfaceDestroyed();
+  }
+}
+
 @Entry
 @Component
 struct Index {
@@ -30,20 +45,61 @@ struct Index {
   // ---------- 相机对象（不驱动 UI，用普通私有变量）----------
   private context: common.UIAbilityContext | undefined = undefined;
   private surfaceId: string = '';
-  private xComponentController: XComponentController = new XComponentController();
+  private xComponentController: MirrorSurfaceController = new MirrorSurfaceController();
   private cameraManager: camera.CameraManager | undefined = undefined;
   private cameraInput: camera.CameraInput | undefined = undefined;
   private previewOutput: camera.PreviewOutput | undefined = undefined;
   private photoOutput: camera.PhotoOutput | undefined = undefined;
   private photoSession: camera.PhotoSession | undefined = undefined;
   private photoBuffer: ArrayBuffer | undefined = undefined;      // 最近一张照片数据
+  private initializing: boolean = false;                          // 相机会话是否正在初始化
+  private pageVisible: boolean = true;                            // 页面是否在前台
 
   aboutToAppear(): void {
     this.rotQuarter = display.getDefaultDisplaySync().rotation;
+    this.xComponentController.surfaceCreated = (surfaceId: string): void => {
+      this.handleSurfaceCreated(surfaceId);
+    };
+    this.xComponentController.surfaceDestroyed = (): void => {
+      this.surfaceId = '';
+      this.releaseCamera();
+    };
   }
 
   aboutToDisappear(): void {
     this.releaseCamera();
+  }
+
+  onPageShow(): void {
+    this.pageVisible = true;
+    try {
+      const id: string = this.xComponentController.getXComponentSurfaceId();
+      if (id) {
+        this.surfaceId = id;
+      }
+    } catch (err) {
+      // surface 尚未就绪时忽略，等待 onSurfaceCreated 回调
+    }
+    this.initCamera();
+  }
+
+  onPageHide(): void {
+    this.pageVisible = false;
+    this.releaseCamera();
+  }
+
+  // surface 创建或重建完成：更新 surfaceId，必要时在新 surface 上重建会话
+  private handleSurfaceCreated(surfaceId: string): void {
+    const stale: boolean = this.surfaceId !== '' && this.surfaceId !== surfaceId;
+    this.surfaceId = surfaceId;
+    if (stale && this.isPreviewing) {
+      // 旧会话绑定在已销毁的旧 surface 上，先释放再重建
+      this.releaseCamera().then(() => {
+        this.initCamera();
+      });
+      return;
+    }
+    this.initCamera();
   }
 
   private pinchBase: number = 1;
@@ -157,13 +213,36 @@ struct Index {
     }
   }
 
-  private async initCamera(): Promise<void> {
-    if (this.isPreviewing) {
-      return;
+  private initCamera(): Promise<void> {
+    if (this.isPreviewing || this.initializing) {
+      return Promise.resolve();
     }
+    const sid: string = this.surfaceId;
+    if (sid === '') {
+      return Promise.resolve();
+    }
+    this.initializing = true;
+    return this.doInitCamera(sid)
+      .finally(() => {
+        this.initializing = false;
+      })
+      .then(() => {
+        // surface 在初始化期间被重建：释放旧会话并按新 surface 重建
+        if (this.isPreviewing && this.surfaceId !== sid) {
+          return this.releaseCamera().then(() => this.initCamera());
+        }
+        return Promise.resolve();
+      });
+  }
+
+  private async doInitCamera(sid: string): Promise<void> {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     if (!await this.requestCameraPermission()) {
       this.permissionDenied = true;
+      return;
+    }
+    this.permissionDenied = false;
+    if (!this.pageVisible) {
       return;
     }
     try {
@@ -186,7 +265,7 @@ struct Index {
       this.profileW = previewProfile.size.width;
       this.profileH = previewProfile.size.height;
       // 4. 预览绑定到 XComponent 的 surface，另建一路拍照输出
-      this.previewOutput = this.cameraManager.createPreviewOutput(previewProfile, this.surfaceId);
+      this.previewOutput = this.cameraManager.createPreviewOutput(previewProfile, sid);
       this.photoOutput = this.cameraManager.createPhotoOutput(capability.photoProfiles[0]);
       // 5. 创建 photo 会话并启动
       this.photoSession = this.cameraManager.createSession<camera.PhotoSession>(camera.SceneMode.NORMAL_PHOTO);
@@ -197,6 +276,11 @@ struct Index {
       await this.photoSession.commitConfig();
       await this.photoSession.start();
       this.isPreviewing = true;
+      if (!this.pageVisible) {
+        // 初始化期间退到后台：立即释放，不在后台占用相机
+        await this.releaseCamera();
+        return;
+      }
       // 6. 读取支持的变焦范围
       const range: Array<number> = this.photoSession.getZoomRatioRange();
       if (range && range.length >= 2) {
@@ -233,22 +317,47 @@ struct Index {
     }
   }
 
+  // 幂等释放：页面隐藏 / surface 销毁 / 组件卸载可能并发触发，先摘除引用再逐个释放
   private async releaseCamera(): Promise<void> {
+    const session = this.photoSession;
+    const preview = this.previewOutput;
+    const photo = this.photoOutput;
+    const input = this.cameraInput;
+    this.photoSession = undefined;
+    this.previewOutput = undefined;
+    this.photoOutput = undefined;
+    this.cameraInput = undefined;
+    this.cameraManager = undefined;
+    this.isPreviewing = false;
     try {
-      if (this.photoSession) {
-        await this.photoSession.stop();
-        await this.photoSession.release();
-      }
-      if (this.previewOutput) {
-        await this.previewOutput.release();
-      }
-      if (this.cameraInput) {
-        await this.cameraInput.close();
+      if (session) {
+        await session.stop();
+        await session.release();
       }
     } catch (err) {
       // 忽略释放异常
     }
-    this.isPreviewing = false;
+    try {
+      if (preview) {
+        await preview.release();
+      }
+    } catch (err) {
+      // 忽略释放异常
+    }
+    try {
+      if (photo) {
+        await photo.release();
+      }
+    } catch (err) {
+      // 忽略释放异常
+    }
+    try {
+      if (input) {
+        await input.close();
+      }
+    } catch (err) {
+      // 忽略释放异常
+    }
   }
 
   private setZoom(value: number): void {

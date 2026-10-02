@@ -1,5 +1,17 @@
 # 更新记录 | Changelog
 
+## v1.0.2（2026-10-02）
+
+### 修复 | Fixes
+
+- **退后台后画面冻结**：应用退到后台再回到前台后，预览画面不再更新，需从最近任务清理后重启才恢复。现通过自定义 `XComponentController` 监听 surface 的创建/销毁，surface 销毁时释放相机、重建时自动在新 surface 上重建会话；并以页面前后台生命周期（`onPageShow`/`onPageHide`）兜底，同时保证后台不占用相机。
+- **释放健壮性**：相机释放改为幂等（先摘引用再逐个释放，并补上此前遗漏的 `PhotoOutput`），页面隐藏、surface 销毁、组件卸载并发触发也不会重复释放或泄漏；初始化期间 surface 被重建时自动重试。
+- **分层图标**：应用图标改为分层图标（layered icon），消除 IDE 关于启动体验的警告。
+
+- **Frozen preview after backgrounding**: returning to the foreground no longer shows a stale frame. A custom `XComponentController` listens to surface creation/destruction, releasing the camera when the surface dies and rebuilding the session on the new one; page show/hide lifecycle acts as a fallback, and the camera is never held in the background.
+- **Release robustness**: camera release is now idempotent (detach-then-release, including the previously missed `PhotoOutput`), safe against concurrent triggers; initialization retries automatically if the surface is recreated mid-init.
+- **Layered app icon** adopted, resolving the IDE startup-experience warning.
+
 ## v1.0.1（2026-10-02）
 
 ### 修复 | Fixes

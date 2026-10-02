@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\jimi_\\.ohos\\config\\default_Mirror_for_Pura_Pro_Y7eaIM3APws3v1sPAzaYx78ATp11Xp9aZOQ4mWump4Y=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001AB384282038CD31FEF3FA43B661B95E6477CD8A61AB2A533718D6C8DD489D1C838C43E27DF9C8",
+          "keyPassword": "0000001BA7D153D30BAC50CDFA2AE4E6BB5929EF0FC4A2D110A898212049D87D95A0F5168596D267F21013",
           "profile": "C:\\Users\\jimi_\\.ohos\\config\\default_Mirror_for_Pura_Pro_Y7eaIM3APws3v1sPAzaYx78ATp11Xp9aZOQ4mWump4Y=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\jimi_\\.ohos\\config\\default_Mirror_for_Pura_Pro_Y7eaIM3APws3v1sPAzaYx78ATp11Xp9aZOQ4mWump4Y=.p12",
-          "storePassword": "0000001AABA7E9761C9E42D64729605F66B150D6156332A831007FF02E59F1FA381649D82BF80A12AF79"
+          "storePassword": "0000001B5199412476839603E8A304696A7528539F5F26F0C0A56C2A33D21B73103BC900D6C72FF17EEF48"
         }
       }
     ],
